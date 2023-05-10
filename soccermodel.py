@@ -27,6 +27,8 @@ class SoccerModel(torch.nn.Module):
         self.fc3 = torch.nn.Linear(6, 4)
         self.fc4 = torch.nn.Linear(4, 2)
 
+        self.optimizer = torch.optim.AdamW(self.parameters(), lr=0.0001)
+
     def forward(self, x):
         x = torch.nn.functional.relu(self.fc1(x))
         x = torch.nn.functional.relu(self.fc2(x))

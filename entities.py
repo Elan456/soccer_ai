@@ -82,6 +82,7 @@ class Ball:
         self.team1_score = 0
 
     def move(self, players, goals):
+        good_kick = False
         # If the ball is touching a player, bounce off of them
         for p in players:
             if (self.x - p.x) ** 2 + (self.y - p.y) ** 2 < (self.size + PLAYER_SIZE) ** 2:
@@ -91,6 +92,10 @@ class Ball:
                 # Move the ball directly away from the player
                 self.xv = numpy.cos(angle) * self.speed
                 self.yv = numpy.sin(angle) * self.speed
+
+                # Checking if the angle is towards the goal
+                if self.yv > 0:
+                    good_kick = True
 
                 break
 
@@ -136,6 +141,8 @@ class Ball:
                     self.team1_score += 1
                 else:
                     self.team0_score += 1
+
+        return good_kick
 
     def draw(self, screen):
         pygame.draw.circle(screen, (175, 0, 175), (int(self.x), int(self.y)), self.size)

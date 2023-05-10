@@ -103,35 +103,7 @@ def play_against(model):
         clock.tick(60)
 
 
-def collect_input_vals(game, player_num):
-    p = game.players[player_num]
 
-    target_goal = game.goals[1 - p.team]
-    own_goal = game.goals[p.team]
-
-    input_vals = [
-        # Distance to ball
-        p.x - game.ball.x,
-        p.y - game.ball.y,
-        # 0,0,0,0,0,0,0,0
-        # Distance to target goal
-        p.x - target_goal.x,
-        p.y - target_goal.y,
-        # Distance to own goal
-        p.x - own_goal.x,
-        p.y - own_goal.y,
-        # Distance to the bottom wall
-        p.y - FIELD_HEIGHT,
-        # Distance to the top wall
-        p.y,
-        # Distance to the left wall
-        p.x,
-        # Distance to the right wall
-        p.x - FIELD_WIDTH
-    ]
-    input_vals = [v / FIELD_HEIGHT for v in input_vals]
-
-    return input_vals
 
 
 class AiPlayer:
@@ -170,14 +142,47 @@ class SoccerGame:
         self.ai_controllers = []
         self.human_control = None
 
+        self.ticks = 0
+
     def add_AI_player(self, model: SoccerModel, player_num):
         self.ai_controllers.append(AiPlayer(model, player_num))
 
     def set_human_control(self, player_num):
         self.human_control = player_num
 
+    def collect_input_vals(self, player_num):
+        p = self.players[player_num]
 
-    def update(self, screen=None):
+        target_goal = self.goals[1 - p.team]
+        own_goal = self.goals[p.team]
+
+        input_vals = [
+            # Distance to ball
+            p.x - self.ball.x,
+            p.y - self.ball.y,
+            # 0,0,0,0,0,0,0,0
+            # Distance to target goal
+            p.x - target_goal.x,
+            p.y - target_goal.y,
+            # Distance to own goal
+            p.x - own_goal.x,
+            p.y - own_goal.y,
+            # Distance to the bottom wall
+            p.y - FIELD_HEIGHT,
+            # Distance to the top wall
+            p.y,
+            # Distance to the left wall
+            p.x,
+            # Distance to the right wall
+            p.x - FIELD_WIDTH
+        ]
+        input_vals = [v / FIELD_HEIGHT for v in input_vals]
+
+        return input_vals
+
+
+    def update(self, screen=None, action=None):
+        self.ticks += 1
         # Draw the field
         if screen is not None:
             pygame.draw.rect(screen, (0, 175, 0), (0, 0, FIELD_WIDTH, FIELD_HEIGHT))
@@ -185,39 +190,61 @@ class SoccerGame:
             # Draw the goals
             for g in self.goals:
                 g.draw(screen)
+        if action is None:  # If no action is given, collect input data and use the model to get an action
+            for c in self.ai_controllers:
+                p = self.players[c.player_num]
+                # Collect input values
+                input_vals = self.collect_input_vals(c.player_num)
 
-        for c in self.ai_controllers:
-            p = self.players[c.player_num]
-            # Collect input values
-            input_vals = collect_input_vals(self, c.player_num)
+                # Convert to a tensor
+                input_vals = torch.tensor(input_vals, dtype=torch.float32)
 
-            # Convert to a tensor
-            input_vals = torch.tensor(input_vals, dtype=torch.float32)
+                # Run the model
+                output_vals = c.model(input_vals)
 
-            # Run the model
-            output_vals = c.model(input_vals)
+                # Convert to numpy array
+                output_vals = output_vals.detach().numpy()
+                # Multiply by the speed of the player
+                output_vals *= PLAYER_SPEED
+                # print("Output: " + str(output_vals))
 
-            # Convert to numpy array
-            output_vals = output_vals.detach().numpy()
-            # Multiply by the speed of the player
-            output_vals *= PLAYER_SPEED
-            # print("Output: " + str(output_vals))
+                # Move the player
+                p.control_input(output_vals[0], output_vals[1])
 
-            # Move the player
-            p.control_input(output_vals[0], output_vals[1])
-
-        if self.human_control is not None:
-            dxv, dyv = get_human_input()
-            self.players[self.human_control].control_input(dxv, dyv)
+            if self.human_control is not None:
+                dxv, dyv = get_human_input()
+                self.players[self.human_control].control_input(dxv, dyv)
+        else:
+            # An action was given probably for q-learning
+            # This action will be used to control the one and only player
+            self.players[0].control_input(action[0], action[1])
 
         for p in self.players:
             p.move()
             if screen is not None:
                 p.draw(screen)
-        if self.ball is not None:
-            self.ball.move(self.players, self.goals)
-            if screen is not None:
-                self.ball.draw(screen)
+
+        good_kick = self.ball.move(self.players, self.goals)
+
+        if screen is not None:
+            self.ball.draw(screen)
+
+        if action is not None:
+            # A reward has to be returned and whether the game is over
+            # When a goal is scored, a reward of 1 is returned and the game is over
+            # When a goal is scored against, a reward of -1 is returned and the game is over
+            # When the game is not over, a reward of 0 is returned
+            if self.ball.team0_score > 0:
+                return 1, True
+            elif self.ball.team1_score > 0:
+                return -1, True
+            else:
+                # If the ball just got kicked closer to the goal, then a reward of 0.1 is returned
+                # Otherwise, a reward of 0 is returned
+                if good_kick:
+                    return 0.1, False
+                else:
+                    return 0, False
 
 
 if __name__ == "__main__":
